@@ -47,6 +47,16 @@ def get_stochastic_oscillator(ticker, k_window=14, d_window=3):
     stochastic_d = stochastic_k.rolling(window=d_window).mean()
     return stochastic_k.iloc[-1], stochastic_d.iloc[-1]
 
+def get_volume_change(ticker, window=10):
+    df = pyupbit.get_ohlcv(ticker, interval="minute5", count=window)
+    volume_change = df['volume'].pct_change().mean()
+    return volume_change
+
+def get_price_change(ticker, window=10):
+    df = pyupbit.get_ohlcv(ticker, interval="minute5", count=window)
+    price_change = df['close'].pct_change().mean()
+    return price_change
+
 # 매수 함수
 def buy_crypto_currency(ticker, amount):
     try:
@@ -77,7 +87,7 @@ class CryptoTradingEnv(gym.Env):
         self.done = False
 
         self.action_space = spaces.Box(low=np.array([0, 0]), high=np.array([1, 1]), dtype=np.float32)
-        self.observation_space = spaces.Box(low=0, high=1, shape=(8,), dtype=np.float32)
+        self.observation_space = spaces.Box(low=0, high=1, shape=(10,), dtype=np.float32)
 
     def reset(self):
         self.balance = self.initial_balance
@@ -91,7 +101,10 @@ class CryptoTradingEnv(gym.Env):
         rsi = get_rsi(self.ticker)
         upper_band, lower_band, sma = get_bollinger_bands(self.ticker)
         stochastic_k, stochastic_d = get_stochastic_oscillator(self.ticker)
-        return np.array([macd, signal, rsi, upper_band, lower_band, sma, stochastic_k, stochastic_d], dtype=np.float32)
+        volume_change = get_volume_change(self.ticker)
+        price_change = get_price_change(self.ticker)
+        
+        return np.array([macd, signal, rsi, upper_band, lower_band, sma, stochastic_k, stochastic_d, volume_change, price_change], dtype=np.float32)
 
     def step(self, action):
         current_price = pyupbit.get_current_price(self.ticker)
@@ -158,3 +171,4 @@ if __name__ == "__main__":
             if sell_action > 0.5:
                 sell_crypto_currency(ticker, env.stock_owned)  # 보유 코인 매도
         time.sleep(60)  # 1분마다 주기적으로 매매 진행
+
