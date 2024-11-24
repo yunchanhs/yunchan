@@ -129,6 +129,38 @@ def get_features(ticker):
     df.dropna(inplace=True)
     return df
 
+# 거래 관련 함수 정의
+def get_balance(ticker):
+    """잔고 확인"""
+    try:
+        upbit = pyupbit.Upbit(ACCESS_KEY, SECRET_KEY)
+        balance = upbit.get_balance(ticker)
+        return balance
+    except Exception as e:
+        print(f"[{ticker}] 잔고 확인 중 에러 발생: {e}")
+        return 0
+
+def buy_crypto_currency(ticker, amount):
+    """시장가로 코인 매수"""
+    try:
+        upbit = pyupbit.Upbit(ACCESS_KEY, SECRET_KEY)
+        order = upbit.buy_market_order(ticker, amount)
+        return order
+    except Exception as e:
+        print(f"[{ticker}] 매수 중 에러 발생: {e}")
+        return None
+
+def sell_crypto_currency(ticker, amount):
+    """시장가로 코인 매도"""
+    try:
+        upbit = pyupbit.Upbit(ACCESS_KEY, SECRET_KEY)
+        order = upbit.sell_market_order(ticker, amount)
+        return order
+    except Exception as e:
+        print(f"[{ticker}] 매도 중 에러 발생: {e}")
+        return None
+
+
 # 모델 학습을 위한 데이터셋 준비
 class TradingDataset(Dataset):
     def __init__(self, data, seq_len):
