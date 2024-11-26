@@ -280,7 +280,7 @@ if __name__ == "__main__":
 
                     # 매수 조건
                     if ml_signal > ML_THRESHOLD and macd > signal and rsi < 30 and adx > 25 and krw_balance > 5000:
-                        buy_amount = krw_balance * 0.1
+                        buy_amount = krw_balance * 0.3
                         buy_result = buy_crypto_currency(ticker, buy_amount)
                         if buy_result:
                             entry_prices[ticker] = current_price
