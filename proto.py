@@ -304,12 +304,12 @@ if __name__ == "__main__":
                     if ticker not in models:
                         models[ticker] = train_transformer_model(ticker, epochs=10)  # 급상승 코인은 빠르게 학습
 
+                # 쿨다운 타임 체크
+                if ticker in recent_trades and datetime.now() - recent_trades[ticker] < COOLDOWN_TIME:
+                    continue
 
-                    # 쿨다운 타임 체크
-                    if ticker in recent_trades and now - recent_trades[ticker] < COOLDOWN_TIME:
-                        continue
-
-                   # AI 및 지표 계산
+                try:
+                    # AI 및 지표 계산
                     ml_signal = get_ml_signal(ticker, models[ticker])
                     macd, signal = get_macd(ticker)
                     rsi = get_rsi(ticker)
@@ -323,7 +323,7 @@ if __name__ == "__main__":
                         if buy_result:
                             entry_prices[ticker] = current_price
                             highest_prices[ticker] = current_price
-                            recent_trades[ticker] = now
+                            recent_trades[ticker] = datetime.now()
                             print(f"[{ticker}] 매수 완료: {buy_amount:.2f}원, 가격: {current_price:.2f}")
 
                     # 매도 조건
@@ -356,3 +356,7 @@ if __name__ == "__main__":
 
                 except Exception as e:
                     print(f"[{ticker}] 처리 중 에러 발생: {e}")
+
+    except KeyboardInterrupt:
+        print("프로그램이 종료되었습니다.")
+
