@@ -210,7 +210,7 @@ class TradingDataset(Dataset):
         y = self.data.iloc[idx + self.seq_len]['future_return']
         return torch.tensor(x, dtype=torch.float32), torch.tensor(y, dtype=torch.float32)
 
-def train_transformer_model(ticker):
+def train_transformer_model(epochs=50):
     data = get_features(ticker)
     seq_len = 30
     dataset = TradingDataset(data, seq_len)
@@ -226,7 +226,7 @@ def train_transformer_model(ticker):
     criterion = nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
-    for epoch in range(50):
+    for epoch in range(1, epochs + 1):
         for x_batch, y_batch in dataloader:
             optimizer.zero_grad()
             output = model(x_batch)
