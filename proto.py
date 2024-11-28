@@ -28,6 +28,33 @@ highest_prices = {}  # 최고가 기록용
 last_trained_time = None  # 마지막 학습 시간
 TRAINING_INTERVAL = timedelta(hours=6)  # 6시간마다 재학습
 
+def get_top_tickers(n=10):
+    """거래량 상위 n개 코인을 선택"""
+    tickers = pyupbit.get_tickers(fiat="KRW")
+    volumes = []
+    for ticker in tickers:
+        try:
+            df = pyupbit.get_ohlcv(ticker, interval="day", count=1)
+            volumes.append((ticker, df['volume'].iloc[-1]))
+        except:
+            volumes.append((ticker, 0))
+    sorted_tickers = sorted(volumes, key=lambda x: x[1], reverse=True)
+    return [ticker for ticker, _ in sorted_tickers[:n]]
+
+def detect_surge_tickers(threshold=0.03):
+    """실시간 급상승 코인을 감지"""
+    tickers = pyupbit.get_tickers(fiat="KRW")
+    surge_tickers = []
+    for ticker in tickers:
+        try:
+            df = pyupbit.get_ohlcv(ticker, interval="minute1", count=5)
+            price_change = (df['close'].iloc[-1] - df['close'].iloc[0]) / df['close'].iloc[0]
+            if price_change >= threshold:
+                surge_tickers.append(ticker)
+        except:
+            continue
+    return surge_tickers
+    
 # 머신러닝 모델 정의
 class TransformerModel(nn.Module):
     def __init__(self, input_dim, d_model, num_heads, num_layers, output_dim):
@@ -115,7 +142,7 @@ def get_atr(ticker, period=14):
 
 def get_features(ticker):
     """코인의 과거 데이터와 지표를 가져와 머신러닝에 적합한 피처 생성"""
-    df = pyupbit.get_ohlcv(ticker, interval="minute5", count=200)
+    df = pyupbit.get_ohlcv(ticker, interval="minute5", count=1000)
 
     # MACD 및 Signal 계산
     df['macd'], df['signal'] = get_macd(ticker)  # get_macd 함수 호출
@@ -199,7 +226,7 @@ def train_transformer_model(ticker):
     criterion = nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
-    for epoch in range(10):
+    for epoch in range(50):
         for x_batch, y_batch in dataloader:
             optimizer.zero_grad()
             output = model(x_batch)
@@ -250,22 +277,33 @@ if __name__ == "__main__":
     tickers = pyupbit.get_tickers(fiat="KRW")
     models = {}
 
-    # 모델 초기 학습
-    for ticker in tickers:
-        print(f"모델 학습 시작: {ticker}")
-        models[ticker] = train_transformer_model(ticker)
+    # 초기 설정
+    top_tickers = get_top_tickers(n=10)
+    print(f"거래량 상위 코인: {top_tickers}")
+    models = {ticker: train_transformer_model(ticker) for ticker in top_tickers}
+    recent_surge_tickers = {}
 
     try:
         while True:
-            tickers = pyupbit.get_tickers(fiat="KRW")
-            krw_balance = get_balance("KRW")
+            # 1. 상위 코인 업데이트 (6시간마다)
+            if datetime.now().hour % 6 == 0 and datetime.now().minute == 0:
+                top_tickers = get_top_tickers(n=10)
+                print(f"[{datetime.now()}] 상위 코인 업데이트: {top_tickers}")
 
-            # 6시간마다 모델 재학습
-            retrain_models_if_needed(tickers)
+                # 새롭게 추가된 코인 모델 학습
+                for ticker in top_tickers:
+                    if ticker not in models:
+                        models[ticker] = train_transformer_model(ticker)
 
-            for ticker in tickers:
-                try:
-                    now = datetime.now()
+            # 2. 급상승 코인 감지
+            surge_tickers = detect_surge_tickers(threshold=0.03)
+            for ticker in surge_tickers:
+                if ticker not in recent_surge_tickers:
+                    print(f"[{datetime.now()}] 급상승 감지: {ticker}")
+                    recent_surge_tickers[ticker] = datetime.now()
+                    if ticker not in models:
+                        models[ticker] = train_transformer_model(ticker, epochs=10)  # 급상승 코인은 빠르게 학습
+
 
                     # 쿨다운 타임 체크
                     if ticker in recent_trades and now - recent_trades[ticker] < COOLDOWN_TIME:
