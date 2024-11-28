@@ -309,7 +309,7 @@ if __name__ == "__main__":
                     if ticker in recent_trades and now - recent_trades[ticker] < COOLDOWN_TIME:
                         continue
 
-                    # AI 및 지표 계산
+                   # AI 및 지표 계산
                     ml_signal = get_ml_signal(ticker, models[ticker])
                     macd, signal = get_macd(ticker)
                     rsi = get_rsi(ticker)
@@ -356,8 +356,3 @@ if __name__ == "__main__":
 
                 except Exception as e:
                     print(f"[{ticker}] 처리 중 에러 발생: {e}")
-
-            time.sleep(60)
-
-    except Exception as e:
-        print(f"시스템 에러: {e}")
