@@ -210,7 +210,8 @@ class TradingDataset(Dataset):
         y = self.data.iloc[idx + self.seq_len]['future_return']
         return torch.tensor(x, dtype=torch.float32), torch.tensor(y, dtype=torch.float32)
 
-def train_transformer_model(epochs=50):
+# 모델 학습 함수
+def train_transformer_model(ticker, epochs=50):  # epochs 기본값을 50으로 설정
     data = get_features(ticker)
     seq_len = 30
     dataset = TradingDataset(data, seq_len)
@@ -226,16 +227,17 @@ def train_transformer_model(epochs=50):
     criterion = nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
-    for epoch in range(1, epochs + 1):
+    for epoch in range(1, epochs + 1):  # epochs 기본값 50으로 설정
         for x_batch, y_batch in dataloader:
             optimizer.zero_grad()
             output = model(x_batch)
             loss = criterion(output.squeeze(), y_batch)
             loss.backward()
             optimizer.step()
-        print(f'Epoch [{epoch+1}/10], Loss: {loss.item():.4f}')
+        print(f'Epoch [{epoch}/{epochs}], Loss: {loss.item():.4f}')  # 전체 epoch 수를 출력
 
     return model
+
 
 def get_ml_signal(ticker, model):
     """AI 신호 계산"""
@@ -258,6 +260,7 @@ def should_retrain_model():
         return True
     return datetime.now() - last_trained_time >= TRAINING_INTERVAL
 
+# 모델 학습 시작
 def retrain_models_if_needed(tickers):
     """모델이 6시간 주기로 재학습 필요 시 재학습"""
     global last_trained_time
@@ -265,7 +268,7 @@ def retrain_models_if_needed(tickers):
         print("모델을 재학습합니다...")
         for ticker in tickers:
             print(f"모델 학습 시작: {ticker}")
-            models[ticker] = train_transformer_model(ticker)
+            models[ticker] = train_transformer_model(ticker, epochs=50)  # 50 에포크로 학습
         last_trained_time = datetime.now()
         print(f"모델 학습 완료: {last_trained_time}")
 
