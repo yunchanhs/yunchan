@@ -210,7 +210,7 @@ class TradingDataset(Dataset):
         y = self.data.iloc[idx + self.seq_len]['future_return']
         return torch.tensor(x, dtype=torch.float32), torch.tensor(y, dtype=torch.float32)
 
-def train_transformer_model(ticker, epochs=20):  # epochs 기본값을 50으로 설정
+def train_transformer_model(ticker, epochs=30):  # epochs 기본값을 50으로 설정
     print(f"모델 학습 시작: {ticker}")  # 모델 학습 시작 시 출력
     data = get_features(ticker)
     seq_len = 30
@@ -270,7 +270,7 @@ def retrain_models_if_needed(tickers):
         print("모델을 재학습합니다...")
         for ticker in tickers:
             print(f"모델 학습 시작: {ticker}")
-            models[ticker] = train_transformer_model(ticker, epochs=20)  # 50 에포크로 학습
+            models[ticker] = train_transformer_model(ticker, epochs=30)  # 50 에포크로 학습
         last_trained_time = datetime.now()
         print(f"모델 학습 완료: {last_trained_time}")
 
