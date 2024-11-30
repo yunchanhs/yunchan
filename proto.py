@@ -28,6 +28,10 @@ highest_prices = {}  # 최고가 기록용
 last_trained_time = None  # 마지막 학습 시간
 TRAINING_INTERVAL = timedelta(hours=6)  # 6시간마다 재학습
 
+# GPU 설정
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(f"Using device: {device}")
+
 def get_top_tickers(n=10):
     """거래량 상위 n개 코인을 선택"""
     tickers = pyupbit.get_tickers(fiat="KRW")
@@ -223,12 +227,13 @@ def train_transformer_model(ticker, epochs=50):  # epochs 기본값을 50으로 
     num_layers = 2
     output_dim = 1
 
-    model = TransformerModel(input_dim, d_model, num_heads, num_layers, output_dim)
+    model = TransformerModel(input_dim, d_model, num_heads, num_layers, output_dim).to(device)
     criterion = nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
     for epoch in range(1, epochs + 1):  # epochs 기본값 50으로 설정
         for x_batch, y_batch in dataloader:
+            x_batch, y_batch = x_batch.to(device), y_batch.to(device)
             optimizer.zero_grad()
             output = model(x_batch)
             loss = criterion(output.squeeze(), y_batch)
@@ -238,7 +243,6 @@ def train_transformer_model(ticker, epochs=50):  # epochs 기본값을 50으로 
 
     print(f"모델 학습 완료: {ticker}")  # 학습 완료 시 출력
     return model
-
 
 
 def get_ml_signal(ticker, model):
