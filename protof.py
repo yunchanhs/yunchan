@@ -61,7 +61,8 @@ def get_ohlcv_cached(ticker, interval="minute60"):
     time.sleep(0.2)  # 요청 간격 조절
     return pyupbit.get_ohlcv(ticker, interval=interval)
 
-tickers = get_top_tickers()
+def detect_surge_tickers():
+    tickers = pyupbit.get_tickers(fiat="KRW")  # 한국 원화 기준 코인 목록 가져오기
     
 # 머신러닝 모델 정의
 class TransformerModel(nn.Module):
@@ -174,15 +175,12 @@ def get_features(ticker):
 # 거래 관련 함수 (생략, 기존 코드 동일)
 # get_balance, buy_crypto_currency, sell_crypto_currency
 
+# Upbit 객체 전역 선언 (한 번만 생성)
+upbit = pyupbit.Upbit(ACCESS_KEY, SECRET_KEY)
+
 def get_balance(ticker):
-    """잔고 확인"""
-    try:
-        upbit = pyupbit.Upbit(ACCESS_KEY, SECRET_KEY)
-        balance = upbit.get_balance(ticker)
-        return balance
-    except Exception as e:
-        print(f"[{ticker}] 잔고 확인 중 에러 발생: {e}")
-        return 0
+    return upbit.get_balance(ticker)
+
 
 def buy_crypto_currency(ticker, amount):
     """시장가로 코인 매수"""
@@ -277,11 +275,13 @@ def detect_surge_tickers():
 
     return surge_tickers
 
-# 비정상 변동 감지 시 재학습
-surge_tickers = detect_surge_tickers()
-if len(surge_tickers) > 3:  # 급등한 코인이 3개 이상이면 학습 실행
-    for ticker in surge_tickers:
-        models[ticker] = train_transformer_model(ticker)
+last_trained_time = 0
+
+def detect_surge_tickers():
+    global last_trained_time
+    if len(surge_tickers) > 3 and (time.time() - last_trained_time > 3600):  # 1시간마다 학습
+        train_ml_model()
+        last_trained_time = time.time()
 
 # 메인 로직
 if __name__ == "__main__":
@@ -331,7 +331,8 @@ if __name__ == "__main__":
                     current_price = pyupbit.get_current_price(ticker)
 
                     # 매수 조건
-                    if ml_signal > ML_THRESHOLD and macd > signal and rsi < 30 and adx > 25:
+                    if isinstance(ml_signal, (int, float)) and 0 <= ml_signal <= 1:
+                        if ml_signal > ML_THRESHOLD and macd > signal and rsi < 30 and adx > 25:
                         krw_balance = get_balance("KRW")
                         if krw_balance > 5000:
                             buy_amount = krw_balance * 0.3
