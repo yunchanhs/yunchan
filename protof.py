@@ -258,30 +258,20 @@ def get_ml_signal(ticker, model):
     except Exception as e:
         print(f"[{ticker}] AI 신호 계산 에러: {e}")
         return 0
-
-def detect_surge_tickers():
-    tickers = get_tickers()
+# detect_surge_tickers 중복 삭제 및 오류 수정
+def detect_surge_tickers(threshold=0.03):
+    """실시간 급상승 코인을 감지"""
+    tickers = pyupbit.get_tickers(fiat="KRW")  # 정의되지 않은 get_tickers() 대신 직접 호출
     surge_tickers = []
-
     for ticker in tickers:
-        df = get_ohlcv_cached(ticker)
-        recent_volumes = df["volume"].rolling(window=5).mean()
-        volume_change = recent_volumes.iloc[-1] / recent_volumes.iloc[-5]
-
-        price_change = (df["close"].iloc[-1] - df["close"].iloc[-5]) / df["close"].iloc[-5]
-
-        if volume_change > 2 or abs(price_change) > 0.1:  # 거래량 2배 증가 or 가격 10% 이상 변동
-            surge_tickers.append(ticker)
-
+        try:
+            df = pyupbit.get_ohlcv(ticker, interval="minute1", count=5)
+            price_change = (df['close'].iloc[-1] - df['close'].iloc[0]) / df['close'].iloc[0]
+            if price_change >= threshold:
+                surge_tickers.append(ticker)
+        except:
+            continue
     return surge_tickers
-
-last_trained_time = 0
-
-def detect_surge_tickers():
-    global last_trained_time
-    if len(surge_tickers) > 3 and (time.time() - last_trained_time > 3600):  # 1시간마다 학습
-        train_ml_model()
-        last_trained_time = time.time()
 
 # 메인 로직
 if __name__ == "__main__":
@@ -333,15 +323,15 @@ if __name__ == "__main__":
                     # 매수 조건
                     if isinstance(ml_signal, (int, float)) and 0 <= ml_signal <= 1:
                         if ml_signal > ML_THRESHOLD and macd > signal and rsi < 30 and adx > 25:
-                        krw_balance = get_balance("KRW")
-                        if krw_balance > 5000:
-                            buy_amount = krw_balance * 0.3
-                            buy_result = buy_crypto_currency(ticker, buy_amount)
-                            if buy_result:
-                                entry_prices[ticker] = current_price
-                                highest_prices[ticker] = current_price
-                                recent_trades[ticker] = datetime.now()
-                                print(f"[{ticker}] 매수 완료: {buy_amount:.2f}원, 가격: {current_price:.2f}")
+                            krw_balance = get_balance("KRW")
+                            if krw_balance > 5000:
+                                buy_amount = krw_balance * 0.3
+                                buy_result = buy_crypto_currency(ticker, buy_amount)
+                                if buy_result:
+                                    entry_prices[ticker] = current_price
+                                    highest_prices[ticker] = current_price
+                                    recent_trades[ticker] = datetime.now()
+                                    print(f"[{ticker}] 매수 완료: {buy_amount:.2f}원, 가격: {current_price:.2f}")
                         
 
                     # 매도 조건
@@ -364,7 +354,7 @@ if __name__ == "__main__":
                         # 익절 또는 최고점 하락
                         elif change_ratio >= TAKE_PROFIT_THRESHOLD or current_price < highest_prices[ticker] * 0.98:
                             if ml_signal < ML_SELL_THRESHOLD:
-                                coin_balance = get_balance(ticker.split('-')[1])
+                                coin_balance = get_balance(ticker)
                                 if coin_balance > 0:
                                     sell_crypto_currency(ticker, coin_balance)
                                     del entry_prices[ticker]
