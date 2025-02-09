@@ -8,10 +8,12 @@ from datetime import datetime, timedelta
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error
 from torch.utils.data import Dataset, DataLoader
+import functools
 
 # API 키 설정
 ACCESS_KEY = "J8iGqPwfjkX7Yg9bdzwFGkAZcTPU7rElXRozK7O4"
 SECRET_KEY = "6MGxH2WjIftgQ85SLK1bcLxV4emYvrpbk6nYuqRN"
+
 
 # 설정값
 STOP_LOSS_THRESHOLD = -0.03  # -3% 손절
@@ -28,6 +30,7 @@ highest_prices = {}  # 최고가 기록용
 last_trained_time = None  # 마지막 학습 시간
 TRAINING_INTERVAL = timedelta(hours=8)  # 6시간마다 재학습
 
+@functools.lru_cache(maxsize=100)
 def get_top_tickers(n=10):
     """거래량 상위 n개 코인을 선택"""
     tickers = pyupbit.get_tickers(fiat="KRW")
@@ -54,6 +57,12 @@ def detect_surge_tickers(threshold=0.03):
         except:
             continue
     return surge_tickers
+
+def get_ohlcv_cached(ticker, interval="minute60"):
+    time.sleep(0.2)  # 요청 간격 조절
+    return pyupbit.get_ohlcv(ticker, interval=interval)
+
+tickers = get_top_tickers()
     
 # 머신러닝 모델 정의
 class TransformerModel(nn.Module):
@@ -239,8 +248,6 @@ def train_transformer_model(ticker, epochs=30):  # epochs 기본값을 50으로 
     print(f"모델 학습 완료: {ticker}")  # 학습 완료 시 출력
     return model
 
-
-
 def get_ml_signal(ticker, model):
     """AI 신호 계산"""
     try:
@@ -255,25 +262,26 @@ def get_ml_signal(ticker, model):
         print(f"[{ticker}] AI 신호 계산 에러: {e}")
         return 0
 
-def should_retrain_model():
-    """6시간마다 모델을 재학습하도록 결정하는 함수"""
-    global last_trained_time
-    if last_trained_time is None:
-        return True
-    return datetime.now() - last_trained_time >= TRAINING_INTERVAL
+def detect_surge_tickers():
+    tickers = get_tickers()
+    surge_tickers = []
 
-# 모델 학습 시작
-def retrain_models_if_needed(tickers):
-    """모델이 6시간 주기로 재학습 필요 시 재학습"""
-    global last_trained_time
-    if should_retrain_model():
-        print("모델을 재학습합니다...")
-        for ticker in tickers:
-            print(f"모델 학습 시작: {ticker}")
-            models[ticker] = train_transformer_model(ticker, epochs=30)  # 50 에포크로 학습
-        last_trained_time = datetime.now()
-        print(f"모델 학습 완료: {last_trained_time}")
+    for ticker in tickers:
+        df = get_ohlcv_cached(ticker)
+        recent_volumes = df["volume"].rolling(window=5).mean()
+        volume_change = recent_volumes.iloc[-1] / recent_volumes.iloc[-5]
 
+        price_change = (df["close"].iloc[-1] - df["close"].iloc[-5]) / df["close"].iloc[-5]
+
+        if volume_change > 2 or abs(price_change) > 0.1:  # 거래량 2배 증가 or 가격 10% 이상 변동
+            surge_tickers.append(ticker)
+
+    return surge_tickers
+
+# 비정상 변동 감지 시 재학습
+surge_tickers = detect_surge_tickers()
+if len(surge_tickers) > 3:  # 급등한 코인이 3개 이상이면 학습 실행
+    train_model()
 # 메인 로직
 if __name__ == "__main__":
     upbit = pyupbit.Upbit(ACCESS_KEY, SECRET_KEY)
