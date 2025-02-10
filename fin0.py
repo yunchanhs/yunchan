@@ -334,21 +334,6 @@ if __name__ == "__main__":
                     recent_surge_tickers[ticker] = datetime.now()
                     if ticker not in models:
                         models[ticker] = train_transformer_model(ticker, epochs=10)  # 급상승 코인은 빠르게 학습
-            
-            # 거래량 상위 10개 코인도 검사
-            for symbol in top_coins:
-                if symbol not in data:
-                    continue
-                    
-                latest_price = get_latest_price(symbol)  # 현재가 가져오기
-                signal = predict_signal(symbol)  # 기존 예측 함수 사용
-    
-                if signal == 1:
-                    print(f"거래량 상위 코인 {symbol} 매수 조건 충족! 매수 진행")
-                    execute_trade(symbol, "buy", trade_amount)
-                else:
-                    print(f"거래량 상위 코인 {symbol} 매수 조건 미충족")
-
 
                 # 쿨다운 타임 체크
                 if ticker in recent_trades and datetime.now() - recent_trades[ticker] < COOLDOWN_TIME:
