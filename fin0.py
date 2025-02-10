@@ -328,8 +328,12 @@ if __name__ == "__main__":
 
             # 2. 급상승 코인 감지
             surge_tickers = detect_surge_tickers(threshold=0.03)
-            for ticker in surge_tickers:
-                if ticker not in recent_surge_tickers:
+        
+            # ✅ [추가] 거래량 상위 10개 코인과 급상승 코인을 합침
+            target_tickers = set(top_tickers) | set(surge_tickers)  # 중복 방지
+        
+            for ticker in target_tickers:
+                if ticker not in recent_surge_tickers and ticker in surge_tickers:
                     print(f"[{datetime.now()}] 급상승 감지: {ticker}")
                     recent_surge_tickers[ticker] = datetime.now()
                     if ticker not in models:
@@ -338,7 +342,7 @@ if __name__ == "__main__":
                 # 쿨다운 타임 체크
                 if ticker in recent_trades and datetime.now() - recent_trades[ticker] < COOLDOWN_TIME:
                     continue
-
+                    
                 try:
                     # AI 및 지표 계산
                     ml_signal = get_ml_signal(ticker, models[ticker])
@@ -374,47 +378,8 @@ if __name__ == "__main__":
                                 print(f"[{ticker}] 매수 불가 (원화 부족)")
                         else:
                             print(f"[{ticker}] 매수 조건 불충족")
-                        
+    except Exception as e:
+                print(f"[{ticker}] 처리 중 에러 발생: {e}")
 
-                    # 매도 조건
-                    elif ticker in entry_prices:
-                        entry_price = entry_prices[ticker]
-                        highest_prices[ticker] = max(highest_prices[ticker], current_price)
-                        change_ratio = (current_price - entry_price) / entry_price
-                    
-                        # 🛠 [DEBUG] 매도 조건 확인용 로그 추가
-                        print(f"[DEBUG] {ticker} 매도 조건 검사")
-                        print(f" - 진입 가격: {entry_price:.2f}")
-                        print(f" - 최고 가격: {highest_prices[ticker]:.2f}")
-                        print(f" - 현재 가격: {current_price:.2f}")
-                        print(f" - 변동률: {change_ratio:.4f}")
-                        print(f" - AI 신호: {ml_signal:.4f}")
-
-                        # 손절 조건 보완
-                        if change_ratio <= STOP_LOSS_THRESHOLD:
-                            if ml_signal > ML_THRESHOLD:
-                                print(f"[{ticker}] 손실 상태지만 AI 신호 긍정적, 매도 보류.")
-                            else:
-                                coin_balance = get_balance(ticker.split('-')[1])
-                                sell_crypto_currency(ticker, coin_balance)
-                                del entry_prices[ticker]
-                                del highest_prices[ticker]
-                                print(f"[{ticker}] 손절 매도 완료.")
-
-                        # 익절 또는 최고점 하락
-                        elif change_ratio >= TAKE_PROFIT_THRESHOLD or current_price < highest_prices[ticker] * 0.98:
-                            if ml_signal < ML_SELL_THRESHOLD:
-                                coin_balance = get_balance(ticker)
-                                if coin_balance > 0:
-                                    sell_crypto_currency(ticker, coin_balance)
-                                    del entry_prices[ticker]
-                                    del highest_prices[ticker]
-                                    print(f"[{ticker}] 매도 완료 (익절 또는 최고점 하락).")
-                            else:
-                                print(f"[{ticker}] AI 신호 긍정적, 매도 보류.")
-
-                except Exception as e:
-                    print(f"[{ticker}] 처리 중 에러 발생: {e}")
-
-    except KeyboardInterrupt:
-        print("프로그램이 종료되었습니다.")
+except KeyboardInterrupt:
+    print("프로그램이 종료되었습니다.")
