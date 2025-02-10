@@ -271,6 +271,15 @@ def detect_surge_tickers(threshold=0.03):
             continue
     return surge_tickers
 
+def fetch_top_coins_by_volume():
+    tickers = exchange.fetch_tickers()
+    volumes = [(symbol, data['quoteVolume']) for symbol, data in tickers.items() if '/USDT' in symbol]
+    top_coins = sorted(volumes, key=lambda x: x[1], reverse=True)[:10]  # 거래량 기준 상위 10개
+    return [coin[0] for coin in top_coins]
+
+top_coins = fetch_top_coins_by_volume()  # 상위 10개 코인 가져오기
+print("거래량 상위 10개 코인:", top_coins)
+
 # 메인 로직
 if __name__ == "__main__":
     upbit = pyupbit.Upbit(ACCESS_KEY, SECRET_KEY)
@@ -305,6 +314,21 @@ if __name__ == "__main__":
                     recent_surge_tickers[ticker] = datetime.now()
                     if ticker not in models:
                         models[ticker] = train_transformer_model(ticker, epochs=10)  # 급상승 코인은 빠르게 학습
+            
+            # 거래량 상위 10개 코인도 검사
+            for symbol in top_coins:
+                if symbol not in data:
+                    continue
+                    
+                latest_price = get_latest_price(symbol)  # 현재가 가져오기
+                signal = predict_signal(symbol)  # 기존 예측 함수 사용
+    
+                if signal == 1:
+                    print(f"거래량 상위 코인 {symbol} 매수 조건 충족! 매수 진행")
+                    execute_trade(symbol, "buy", trade_amount)
+                else:
+                    print(f"거래량 상위 코인 {symbol} 매수 조건 미충족")
+
 
                 # 쿨다운 타임 체크
                 if ticker in recent_trades and datetime.now() - recent_trades[ticker] < COOLDOWN_TIME:
