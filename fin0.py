@@ -256,29 +256,6 @@ def get_ml_signal(ticker, model):
     except Exception as e:
         print(f"[{ticker}] AI 신호 계산 에러: {e}")
         return 0
-# detect_surge_tickers 중복 삭제 및 오류 수정
-def detect_surge_tickers(threshold=0.03):
-    """실시간 급상승 코인을 감지"""
-    tickers = pyupbit.get_tickers(fiat="KRW")  # 정의되지 않은 get_tickers() 대신 직접 호출
-    surge_tickers = []
-    for ticker in tickers:
-        try:
-            df = pyupbit.get_ohlcv(ticker, interval="minute1", count=5)
-            price_change = (df['close'].iloc[-1] - df['close'].iloc[0]) / df['close'].iloc[0]
-            if price_change >= threshold:
-                surge_tickers.append(ticker)
-        except:
-            continue
-    return surge_tickers
-
-def fetch_top_coins_by_volume():
-    tickers = exchange.fetch_tickers()
-    volumes = [(symbol, data['quoteVolume']) for symbol, data in tickers.items() if '/USDT' in symbol]
-    top_coins = sorted(volumes, key=lambda x: x[1], reverse=True)[:10]  # 거래량 기준 상위 10개
-    return [coin[0] for coin in top_coins]
-
-top_coins = fetch_top_coins_by_volume()  # 상위 10개 코인 가져오기
-print("거래량 상위 10개 코인:", top_coins)
 
 # 메인 로직
 if __name__ == "__main__":
