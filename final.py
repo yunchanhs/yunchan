@@ -15,7 +15,7 @@ SECRET_KEY = "6MGxH2WjIftgQ85SLK1bcLxV4emYvrpbk6nYuqRN"
 
 # 모델 학습 주기 관련 변수
 last_trained_time = None  # 마지막 학습 시간
-TRAINING_INTERVAL = timedelta(hours=8)  # 6시간마다 재학습
+TRAINING_INTERVAL = timedelta(hours=6)  # 6시간마다 재학습
 
 # 매매 전략 관련 임계값
 ML_THRESHOLD = 0.7  # AI 신호 매수 기준
