@@ -375,6 +375,35 @@ if __name__ == "__main__":
                                 print(f"[{ticker}] 매수 불가 (원화 부족)")
                         else:
                             print(f"[{ticker}] 매수 조건 불충족")
+                    # 매도 조건
+                    elif ticker in entry_prices:
+                        entry_price = entry_prices[ticker]
+                        highest_prices[ticker] = max(highest_prices[ticker], current_price)
+                        change_ratio = (current_price - entry_price) / entry_price
+
+                        # 손절 조건 보완
+                        if change_ratio <= STOP_LOSS_THRESHOLD:
+                            if ml_signal > ML_THRESHOLD:
+                                print(f"[{ticker}] 손실 상태지만 AI 신호 긍정적, 매도 보류.")
+                            else:
+                                coin_balance = get_balance(ticker.split('-')[1])
+                                sell_crypto_currency(ticker, coin_balance)
+                                del entry_prices[ticker]
+                                del highest_prices[ticker]
+                                print(f"[{ticker}] 손절 매도 완료.")
+
+                        # 익절 또는 최고점 하락
+                        elif change_ratio >= TAKE_PROFIT_THRESHOLD or current_price < highest_prices[ticker] * 0.98:
+                            if ml_signal < ML_SELL_THRESHOLD:
+                                coin_balance = get_balance(ticker)
+                                if coin_balance > 0:
+                                    sell_crypto_currency(ticker, coin_balance)
+                                    del entry_prices[ticker]
+                                    del highest_prices[ticker]
+                                    print(f"[{ticker}] 매도 완료 (익절 또는 최고점 하락).")
+                            else:
+                                print(f"[{ticker}] AI 신호 긍정적, 매도 보류.")
+
                 except Exception as e:
                     print(f"[{ticker}] 처리 중 에러 발생: {e}")
 
