@@ -8,6 +8,8 @@ from datetime import datetime, timedelta
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error
 from torch.utils.data import Dataset, DataLoader
+import concurrent.futures
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 # API 키 설정
 ACCESS_KEY = "J8iGqPwfjkX7Yg9bdzwFGkAZcTPU7rElXRozK7O4"
@@ -228,7 +230,7 @@ def train_transformer_model(ticker, epochs=30):  # epochs 기본값을 50으로 
 
     model = TransformerModel(input_dim, d_model, num_heads, num_layers, output_dim)
     criterion = nn.MSELoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.003)
 
     for epoch in range(1, epochs + 1):  # epochs 기본값 50으로 설정
         for x_batch, y_batch in dataloader:
@@ -306,11 +308,15 @@ if __name__ == "__main__":
     tickers = pyupbit.get_tickers(fiat="KRW")
     models = {}
 
-    # 초기 설정
+    # ✅ 초기 설정 (기존 방식 유지)
     top_tickers = get_top_tickers(n=10)
     print(f"거래량 상위 코인: {top_tickers}")
+    
+    # ✅ 기존 학습 방식 유지 (상위 10개 코인)
     models = {ticker: train_transformer_model(ticker) for ticker in top_tickers}
-    recent_surge_tickers = {}  # 급상승 코인 저장
+    
+    # 📌 급상승 코인 저장
+    recent_surge_tickers = {}  
 
     try:
         while True:
@@ -329,22 +335,22 @@ if __name__ == "__main__":
             # ✅ 2. 급상승 코인 감지 및 업데이트
             surge_tickers = detect_surge_tickers(threshold=0.03)
 
-            # 📌 급상승 코인 저장 및 모델 학습
-            for ticker in surge_tickers:
-                if ticker not in recent_surge_tickers:
-                    print(f"[{now}] 급상승 감지: {ticker}")
-                    recent_surge_tickers[ticker] = now
-                    if ticker not in models:
-                        models[ticker] = train_transformer_model(ticker, epochs=10)
+            # 📌 병렬 학습 적용
+            new_surge_tickers = [ticker for ticker in surge_tickers if ticker not in recent_surge_tickers]
+            if new_surge_tickers:
+                print(f"[{now}] 병렬 학습 시작: {new_surge_tickers}")
+                new_models = train_models_parallel(new_surge_tickers)
+                models.update(new_models)  # 기존 모델에 추가
+                recent_surge_tickers.update({ticker: now for ticker in new_surge_tickers})
 
-            # ✅ 3. 최종 매수 대상 선정 (상위 10개 + 급상승 코인 포함)
-            target_tickers = set(top_tickers) | set(recent_surge_tickers.keys())  # 🔥 급상승 코인 확실히 포함!
+            # ✅ 3. 매수 대상 선정 (상위 10개 + 급상승 코인 포함)
+            target_tickers = set(top_tickers) | set(recent_surge_tickers.keys())
 
             for ticker in target_tickers:
                 last_trade_time = recent_trades.get(ticker, datetime.min)
                 cooldown_limit = SURGE_COOLDOWN_TIME if ticker in recent_surge_tickers else COOLDOWN_TIME
 
-                # ✅ [쿨다운 적용] 너무 빠른 재거래 방지
+                # ✅ 쿨다운 적용
                 if now - last_trade_time < cooldown_limit:
                     continue  
 
@@ -418,3 +424,4 @@ if __name__ == "__main__":
 
     except KeyboardInterrupt:
         print("프로그램이 종료되었습니다.")
+
