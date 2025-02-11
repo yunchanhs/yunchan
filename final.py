@@ -10,6 +10,8 @@ from sklearn.metrics import mean_squared_error
 from torch.utils.data import Dataset, DataLoader
 import concurrent.futures
 from torch.optim.lr_scheduler import ReduceLROnPlateau
+import multiprocessing as mp
+import threading
 
 # API 키 설정
 ACCESS_KEY = "J8iGqPwfjkX7Yg9bdzwFGkAZcTPU7rElXRozK7O4"
@@ -300,7 +302,97 @@ def backtest(ticker, model, initial_balance=1_000_000, fee=0.0005):
 
     final_value = balance + (position * data.iloc[-1]['close'])
     return final_value / initial_balance
-    
+
+# ✅ 모델 학습을 병렬 처리하는 함수 (멀티프로세싱)
+def train_transformer_model_mp(ticker):
+    return ticker, train_transformer_model(ticker)
+
+def train_models_parallel(tickers):
+    with mp.Pool(processes=min(len(tickers), mp.cpu_count())) as pool:
+        results = pool.map(train_transformer_model_mp, tickers)
+    return {ticker: model for ticker, model in results}
+
+# ✅ 매매 로직을 처리하는 스레드 함수 (멀티스레딩)
+def trading_thread(ticker, models, recent_trades, recent_surge_tickers, entry_prices, highest_prices):
+    while True:
+        now = datetime.now()
+        last_trade_time = recent_trades.get(ticker, datetime.min)
+        cooldown_limit = SURGE_COOLDOWN_TIME if ticker in recent_surge_tickers else COOLDOWN_TIME
+
+        # 쿨다운 적용
+        if now - last_trade_time < cooldown_limit:
+            time.sleep(1)
+            continue
+
+        try:
+            # 🔍 AI 및 지표 계산
+            ml_signal = get_ml_signal(ticker, models[ticker])
+            macd, signal = get_macd(ticker)
+            rsi = get_rsi(ticker)
+            adx = get_adx(ticker)
+            current_price = pyupbit.get_current_price(ticker)
+
+            print(f"[DEBUG] {ticker} 매수 조건 검사")
+            print(f" - ML 신호: {ml_signal:.4f}")
+            print(f" - MACD: {macd:.4f}, Signal: {signal:.4f}")
+            print(f" - RSI: {rsi:.2f}")
+            print(f" - ADX: {adx:.2f}")
+            print(f" - 현재 가격: {current_price:.2f}")
+
+            # ✅ 매수 조건 검사 (급상승 포함)
+            if isinstance(ml_signal, (int, float)) and 0 <= ml_signal <= 1:
+                if ml_signal > ML_THRESHOLD and macd >= signal and rsi < 40 and adx > 20:
+                    krw_balance = get_balance("KRW")
+                    print(f"[DEBUG] 보유 원화 잔고: {krw_balance:.2f}")
+                    if krw_balance > 5000:
+                        buy_amount = krw_balance * 0.3
+                        buy_result = buy_crypto_currency(ticker, buy_amount)
+                        if buy_result:
+                            entry_prices[ticker] = current_price
+                            highest_prices[ticker] = current_price
+                            recent_trades[ticker] = now
+                            print(f"[{ticker}] 매수 완료: {buy_amount:.2f}원, 가격: {current_price:.2f}")
+                        else:
+                            print(f"[{ticker}] 매수 요청 실패")
+                    else:
+                        print(f"[{ticker}] 매수 불가 (원화 부족)")
+                else:
+                    print(f"[{ticker}] 매수 조건 불충족")
+
+            # ✅ 매도 조건 검사
+            elif ticker in entry_prices:
+                entry_price = entry_prices[ticker]
+                highest_prices[ticker] = max(highest_prices[ticker], current_price)
+                change_ratio = (current_price - entry_price) / entry_price
+
+                # 손절 조건 보완
+                if change_ratio <= STOP_LOSS_THRESHOLD:
+                    if ml_signal > ML_THRESHOLD:
+                        print(f"[{ticker}] 손실 상태지만 AI 신호 긍정적, 매도 보류.")
+                    else:
+                        coin_balance = get_balance(ticker.split('-')[1])
+                        sell_crypto_currency(ticker, coin_balance)
+                        del entry_prices[ticker]
+                        del highest_prices[ticker]
+                        print(f"[{ticker}] 손절 매도 완료.")
+
+                # 익절 또는 최고점 하락
+                elif change_ratio >= TAKE_PROFIT_THRESHOLD or current_price < highest_prices[ticker] * 0.98:
+                    if ml_signal < ML_SELL_THRESHOLD:
+                        coin_balance = get_balance(ticker)
+                        if coin_balance > 0:
+                            sell_crypto_currency(ticker, coin_balance)
+                            del entry_prices[ticker]
+                            del highest_prices[ticker]
+                            print(f"[{ticker}] 매도 완료 (익절 또는 최고점 하락).")
+                    else:
+                        print(f"[{ticker}] AI 신호 긍정적, 매도 보류.")
+
+        except Exception as e:
+            print(f"[{ticker}] 처리 중 에러 발생: {e}")
+
+        time.sleep(1)
+
 if __name__ == "__main__":
     upbit = pyupbit.Upbit(ACCESS_KEY, SECRET_KEY)
     print("자동매매 시작!")
@@ -308,13 +400,13 @@ if __name__ == "__main__":
     tickers = pyupbit.get_tickers(fiat="KRW")
     models = {}
 
-    # ✅ 초기 설정 (기존 방식 유지)
+    # ✅ 기존 학습 방식 유지 (상위 10개 코인)
     top_tickers = get_top_tickers(n=10)
     print(f"거래량 상위 코인: {top_tickers}")
-    
-    # ✅ 기존 학습 방식 유지 (상위 10개 코인)
+
+    # ✅ 기존 모델 학습 (병렬 처리)
     models = {ticker: train_transformer_model(ticker) for ticker in top_tickers}
-    
+
     # 📌 급상승 코인 저장
     recent_surge_tickers = {}  
 
@@ -327,10 +419,10 @@ if __name__ == "__main__":
                 top_tickers = get_top_tickers(n=10)
                 print(f"[{now}] 상위 코인 업데이트: {top_tickers}")
 
-                # 새롭게 추가된 코인 모델 학습
-                for ticker in top_tickers:
-                    if ticker not in models:
-                        models[ticker] = train_transformer_model(ticker)
+                # 새롭게 추가된 코인 모델 학습 (병렬 처리)
+                new_tickers = [ticker for ticker in top_tickers if ticker not in models]
+                if new_tickers:
+                    models.update(train_models_parallel(new_tickers))  # 모델 학습 병렬 처리
 
             # ✅ 2. 급상승 코인 감지 및 업데이트
             surge_tickers = detect_surge_tickers(threshold=0.03)
@@ -339,89 +431,23 @@ if __name__ == "__main__":
             new_surge_tickers = [ticker for ticker in surge_tickers if ticker not in recent_surge_tickers]
             if new_surge_tickers:
                 print(f"[{now}] 병렬 학습 시작: {new_surge_tickers}")
-                new_models = train_models_parallel(new_surge_tickers)
+                new_models = train_models_parallel(new_surge_tickers)  # 모델 학습 병렬 처리
                 models.update(new_models)  # 기존 모델에 추가
                 recent_surge_tickers.update({ticker: now for ticker in new_surge_tickers})
 
             # ✅ 3. 매수 대상 선정 (상위 10개 + 급상승 코인 포함)
             target_tickers = set(top_tickers) | set(recent_surge_tickers.keys())
 
+            # ✅ 매매 로직을 위한 스레드 실행
+            threads = []
             for ticker in target_tickers:
-                last_trade_time = recent_trades.get(ticker, datetime.min)
-                cooldown_limit = SURGE_COOLDOWN_TIME if ticker in recent_surge_tickers else COOLDOWN_TIME
+                thread = threading.Thread(target=trading_thread, args=(ticker, models, recent_trades, recent_surge_tickers, entry_prices, highest_prices))
+                thread.daemon = True  # 메인 종료 시 스레드 종료
+                thread.start()
+                threads.append(thread)
 
-                # ✅ 쿨다운 적용
-                if now - last_trade_time < cooldown_limit:
-                    continue  
-
-                try:
-                    # 🔍 AI 및 지표 계산
-                    ml_signal = get_ml_signal(ticker, models[ticker])
-                    macd, signal = get_macd(ticker)
-                    rsi = get_rsi(ticker)
-                    adx = get_adx(ticker)
-                    current_price = pyupbit.get_current_price(ticker)
-
-                    # 🛠 [DEBUG] 로그 추가
-                    print(f"[DEBUG] {ticker} 매수 조건 검사")
-                    print(f" - ML 신호: {ml_signal:.4f}")
-                    print(f" - MACD: {macd:.4f}, Signal: {signal:.4f}")
-                    print(f" - RSI: {rsi:.2f}")
-                    print(f" - ADX: {adx:.2f}")
-                    print(f" - 현재 가격: {current_price:.2f}")
-
-                    # ✅ 4. 매수 조건 검사 (급상승 포함)
-                    if isinstance(ml_signal, (int, float)) and 0 <= ml_signal <= 1:
-                        if ml_signal > ML_THRESHOLD and macd >= signal and rsi < 40 and adx > 20:
-                            krw_balance = get_balance("KRW")
-                            print(f"[DEBUG] 보유 원화 잔고: {krw_balance:.2f}")
-                            if krw_balance > 5000:
-                                buy_amount = krw_balance * 0.3
-                                buy_result = buy_crypto_currency(ticker, buy_amount)
-                                if buy_result:
-                                    entry_prices[ticker] = current_price
-                                    highest_prices[ticker] = current_price
-                                    recent_trades[ticker] = now
-                                    print(f"[{ticker}] 매수 완료: {buy_amount:.2f}원, 가격: {current_price:.2f}")
-                                else:
-                                    print(f"[{ticker}] 매수 요청 실패")
-                            else:
-                                print(f"[{ticker}] 매수 불가 (원화 부족)")
-                        else:
-                            print(f"[{ticker}] 매수 조건 불충족")
-
-                    # ✅ 5. 매도 조건 검사
-                    elif ticker in entry_prices:
-                        entry_price = entry_prices[ticker]
-                        highest_prices[ticker] = max(highest_prices[ticker], current_price)
-                        change_ratio = (current_price - entry_price) / entry_price
-
-                        # 손절 조건 보완
-                        if change_ratio <= STOP_LOSS_THRESHOLD:
-                            if ml_signal > ML_THRESHOLD:
-                                print(f"[{ticker}] 손실 상태지만 AI 신호 긍정적, 매도 보류.")
-                            else:
-                                coin_balance = get_balance(ticker.split('-')[1])
-                                sell_crypto_currency(ticker, coin_balance)
-                                del entry_prices[ticker]
-                                del highest_prices[ticker]
-                                print(f"[{ticker}] 손절 매도 완료.")
-
-                        # 익절 또는 최고점 하락
-                        elif change_ratio >= TAKE_PROFIT_THRESHOLD or current_price < highest_prices[ticker] * 0.98:
-                            if ml_signal < ML_SELL_THRESHOLD:
-                                coin_balance = get_balance(ticker)
-                                if coin_balance > 0:
-                                    sell_crypto_currency(ticker, coin_balance)
-                                    del entry_prices[ticker]
-                                    del highest_prices[ticker]
-                                    print(f"[{ticker}] 매도 완료 (익절 또는 최고점 하락).")
-                            else:
-                                print(f"[{ticker}] AI 신호 긍정적, 매도 보류.")
-
-                except Exception as e:
-                    print(f"[{ticker}] 처리 중 에러 발생: {e}")
+            # 스레드가 실행 중인 동안 메인 루프는 잠시 대기
+            time.sleep(1)
 
     except KeyboardInterrupt:
         print("프로그램이 종료되었습니다.")
-
