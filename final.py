@@ -365,6 +365,14 @@ def trading_thread(ticker, models, recent_trades, recent_surge_tickers, entry_pr
                 highest_prices[ticker] = max(highest_prices[ticker], current_price)
                 change_ratio = (current_price - entry_price) / entry_price
 
+                # 🛠  [DEBUG] 매도 조건 확인용 로그 추가
+                print(f"[DEBUG] {ticker} 매도 조건 검사")
+                print(f" - 진입 가격: {entry_price:.2f}")
+                print(f" - 최고 가격: {highest_prices[ticker]:.2f}")
+                print(f" - 현재 가격: {current_price:.2f}")
+                print(f" - 변동률: {change_ratio:.4f}")
+                print(f" - AI 신호: {ml_signal:.4f}")
+
                 # 손절 조건 보완
                 if change_ratio <= STOP_LOSS_THRESHOLD:
                     if ml_signal > ML_THRESHOLD:
